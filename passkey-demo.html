@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Passkey Test</title>
+</head>
+<body>
+  <h2>Crear Passkey</h2>
+  <button id="create">Register</button>
+
+  <h2>Autenticar</h2>
+  <button id="login">Login</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    const output = document.getElementById("output");
+
+    // Utilidad para imprimir
+    function log(msg) {
+      output.textContent += msg + "\n";
+    }
+
+    document.getElementById("create").onclick = async () => {
+      const options = {
+        publicKey: {
+          challenge: new Uint8Array(32), // En producción: generado por el servidor
+          rp: {
+            name: "Demo App"
+          },
+          user: {
+            id: new Uint8Array(16), // debe ser único por usuario
+            name: "demo@example.com",
+            displayName: "Demo User"
+          },
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 } // ES256
+          ],
+          authenticatorSelection: {
+            userVerification: "preferred"
+          },
+          timeout: 60000,
+          attestation: "none"
+        }
+      };
+
+      try {
+        const credential = await navigator.credentials.create(options);
+        log("✅ Credencial creada:");
+        log(JSON.stringify(credential, null, 2));
+      } catch (err) {
+        log("❌ Error al crear: " + err);
+      }
+    };
+
+    document.getElementById("login").onclick = async () => {
+      const options = {
+        publicKey: {
+          challenge: new Uint8Array(32), // en prod: del servidor
+          allowCredentials: [], // si tienes credenciales registradas, pon su id
+          timeout: 60000,
+          userVerification: "preferred"
+        }
+      };
+
+      try {
+        const assertion = await navigator.credentials.get(options);
+        log("✅ Login exitoso:");
+        log(JSON.stringify(assertion, null, 2));
+      } catch (err) {
+        log("❌ Error en login: " + err);
+      }
+    };
+  </script>
+</body>
+</html>
+

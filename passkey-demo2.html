@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Passkey Demo – Full Flow with Compatibility Check</title>
+</head>
+
+<body>
+  <h2>Passkey Test (FAE + Silent Check + Compatibility)</h2>
+
+  <div id="compatibility-status" style="color: red; font-weight: bold;"></div>
+  <div id="passkey-status" style="margin-top: 10px; font-weight: bold;"></div>
+
+  <br>
+
+  <button id="check-silent">🔍 Check for Passkey (silent)</button><br><br>
+  <button id="register-passkey">1️⃣ Register Passkey (after age verification)</button><br><br>
+  <button id="login-passkey">2️⃣ Login with Passkey</button><br><br>
+  <button id="silent-login">3️⃣ Silent login (no UI)</button><br><br>
+
+  <pre id="output"></pre>
+
+  <script>
+    const output = document.getElementById("output");
+    const status = document.getElementById("passkey-status");
+    const compatibilityStatus = document.getElementById("compatibility-status");
+
+    function log(msg) {
+      output.textContent += msg + "\n";
+    }
+
+    function arrayBufferToBase64(buffer) {
+      return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    }
+
+    function generateRandomBytes(length = 32) {
+      const bytes = new Uint8Array(length);
+      crypto.getRandomValues(bytes);
+      return bytes;
+    }
+
+    let lastStrongAuthTime = null;
+    let storedCredentialId = null;
+
+    async function checkCompatibility() {
+      if (!window.PublicKeyCredential || typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") {
+        compatibilityStatus.textContent = "❌ Passkeys are not supported in this browser.";
+        return false;
+      }
+
+      const supported = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      if (!supported) {
+        compatibilityStatus.textContent = "❌ Your device does not support Passkeys.";
+        return false;
+      }
+
+      compatibilityStatus.textContent = "✅ Passkeys are supported in this browser.";
+      return true;
+    }
+
+    async function checkPasskeyPresence() {
+      const options = {
+        publicKey: {
+          challenge: generateRandomBytes(),
+          timeout: 5000,
+          userVerification: "preferred",
+          allowCredentials: []
+        },
+        mediation: "silent"
+      };
+
+      try {
+        const credential = await navigator.credentials.get(options);
+        if (credential) {
+          status.textContent = "✅ A Passkey is already registered for this domain.";
+          log("🔎 Silent check: Passkey found (ID: " + credential.id + ")");
+        } else {
+          status.textContent = "ℹ️ No Passkey found for this domain.";
+          log("🔎 Silent check: No Passkey found.");
+        }
+      } catch (err) {
+        status.textContent = "⚠️ Error during silent check: " + err;
+        log("❌ Silent check error: " + err);
+      }
+    }
+
+    window.addEventListener("load", async () => {
+      const compatible = await checkCompatibility();
+      if (compatible) {
+        checkPasskeyPresence();
+      }
+    });
+
+    document.getElementById("check-silent").onclick = () => {
+      checkPasskeyPresence();
+    };
+
+    document.getElementById("register-passkey").onclick = async () => {
+      const randomUserId = generateRandomBytes(16);
+
+      const publicKeyOptions = {
+        challenge: generateRandomBytes(),
+        rp: { name: "Anonymous Age App" },
+        user: {
+          id: randomUserId,
+          name: "anonymous",
+          displayName: "Anonymous User"
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        timeout: 60000,
+        attestation: "none",
+        authenticatorSelection: {
+          residentKey: "required",
+          userVerification: "preferred"
+        }
+      };
+
+      try {
+        const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+        storedCredentialId = credential.id;
+        lastStrongAuthTime = new Date();
+        log("✅ Passkey registered (age verified)");
+        log("🕒 FAE timestamp: " + lastStrongAuthTime.toLocaleTimeString());
+      } catch (err) {
+        log("❌ Registration failed: " + err);
+      }
+    };
+
+    document.getElementById("login-passkey").onclick = async () => {
+      const publicKeyOptions = {
+        challenge: generateRandomBytes(),
+        timeout: 60000,
+        userVerification: "preferred",
+        allowCredentials: []
+      };
+
+      try {
+        const credential = await navigator.credentials.get({ publicKey: publicKeyOptions });
+        log("✅ Login with Passkey successful, ID: " + credential.id);
+        checkExpiry();
+      } catch (err) {
+        log("❌ Login failed: " + err);
+      }
+    };
+
+    document.getElementById("silent-login").onclick = async () => {
+      const publicKeyOptions = {
+        challenge: generateRandomBytes(),
+        timeout: 60000,
+        userVerification: "preferred",
+        allowCredentials: [],
+      };
+
+      try {
+        const credential = await navigator.credentials.get({
+          publicKey: publicKeyOptions,
+          mediation: "silent"
+        });
+
+        if (credential) {
+          log("🕵️ Silent login successful, ID: " + credential.id);
+          checkExpiry();
+        } else {
+          log("🚫 No Passkey found for silent login.");
+        }
+      } catch (err) {
+        log("❌ Silent login error: " + err);
+      }
+    };
+
+    function checkExpiry() {
+      const now = new Date();
+      if (lastStrongAuthTime && (now - lastStrongAuthTime) < 30000) {
+        log("🟢 Authentication valid – recently verified age");
+      } else {
+        log("🔴 FAE expired – age verification required again");
+      }
+    }
+  </script>
+</body>
+
+</html>
